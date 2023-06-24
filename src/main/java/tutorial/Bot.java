@@ -1,15 +1,17 @@
 package tutorial;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
+import org.telegram.telegrambots.meta.api.methods.groupadministration.GetChat;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import tutorial.Exceptions.IncorrectMessageException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,8 +23,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
-
 public class Bot extends TelegramLongPollingBot {
+    private final static Logger logger = LogManager.getLogger("Bot");
+
     @Override
     public String getBotUsername() {
         return "KolprobBot";
@@ -55,6 +58,7 @@ public class Bot extends TelegramLongPollingBot {
         User user = update.getMessage().getFrom();
         //Если же пользователь, просто заполняет информацию в ручную,
         if (livingCreators.containsKey(id) && !message.isCommand()) {
+            logger.debug("workWithCreator");
             workWithCreator(update); //Программа запишет полученную информацию, в соответствующие поля, и продолжит настройку.
         }
         /*
@@ -63,7 +67,7 @@ public class Bot extends TelegramLongPollingBot {
          */
         else {
             if (update.hasMessage() && update.getMessage().hasText()) {
-                System.out.println("User " + user.getUserName() + " wrote: " + update.getMessage().getText());
+                logger.info("User: " + user.getUserName());
                 if (message.getText().equals("/create")) { //При вызове пользователем команды /create,
                     getCreator(id); // мы создадим для него личный Thread, в котором будет настройка задолженности
                 }
@@ -74,27 +78,25 @@ public class Bot extends TelegramLongPollingBot {
 
     public void workWithCreator(Update update) {
         DebtorCreator debtorCreator = livingCreators.get(update.getMessage().getChatId()); // Получаем ссылку на DebtorCreator пользователя
-        Message message = update.getMessage();
-        try {
-            if (message.hasText()) {
-                debtorCreator.setCurrentUpdate(update); //отправляем ему полученное обновления
-                debtorCreator.setText(update.getMessage().getText()); // сохраняем информацию, отправленную пользователем
-            } else if (debtorCreator.getStep() == 7 && message.hasPhoto()) { // Перед восьмым шагом, пользователь должен отправить фото, или пропустить шаг.
-                // При первом варианте, следует заранее проверить наличие фото,
-                //и вручную запустить процесс изменения меню
-                debtorCreator.changeStep(false);
-                debtorCreator.setCurrentUpdate(update);
-                debtorCreator.tapCreatorKeyboard(update);
-            } else throw new IncorrectMessageException();
-        } catch (IncorrectMessageException e) {
-            debtorCreator.setCurrentUpdate(update);
-            debtorCreator.sendException("Неправильный ввод данных.");
+        if (!debtorCreator.checkExceptions(update)) {
+            logger.debug("Exception is detected.");
+            return;
         }
+        Message message = update.getMessage();
+        if (debtorCreator.getStep() == 7 && message.hasPhoto()) { // Перед восьмым шагом, пользователь должен отправить фото, или пропустить шаг.
+            // При первом варианте, следует заранее проверить наличие фото,
+            //и вручную запустить процесс изменения меню
+            debtorCreator.changeStep(false);
+            debtorCreator.setCurrentUpdate(update);
+            debtorCreator.tapCreatorKeyboard(update);
+        }
+        debtorCreator.setCurrentUpdate(update); //отправляем ему полученное обновления
+        debtorCreator.setText(update.getMessage().getText()); // сохраняем информацию, отправленную пользователем
     }
 
     private void getCreator(Long id) { //DebtorCreator extends Thread
         if (livingCreators.containsKey(id)) { // Проверяем, существует ли уже поток, для определенного пользователя(в случає повторного вызова /create)
-           livingCreators.get(id).interrupt(); //если да, то останавливаем
+            livingCreators.get(id).interrupt(); //если да, то останавливаем
         }
         livingCreators.put(id, new DebtorCreator(id)); //после создаем новый поток и добавляем в список активных DebtorCreators
     }
@@ -112,6 +114,10 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private void CrNavigate(Update update) {
+        String button = update.getCallbackQuery().getData();
+        String username = update.getCallbackQuery().getFrom().getUserName();
+        String message = String.format("User:%-28s %-6s \"%s\"", username, "PRESS:", button);
+        logger.info(message);
         DebtorCreator debtorCreator = livingCreators.get(update.getCallbackQuery().getFrom().getId());
         AnswerCallbackQuery close = AnswerCallbackQuery.builder()       //Создаем AnswerCallbackQuery чтоб не было вечной загрузки на кнопке
                 .callbackQueryId(update.getCallbackQuery().getId()).build();
@@ -120,7 +126,6 @@ public class Bot extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
             throw new RuntimeException(e);
         }
-        String button = update.getCallbackQuery().getData();
         switch (button) {
             case "back" -> { // Если пользователь хочет вернуться к предыдущему полю,
                 debtorCreator.changeStep(true); //делаем шаг назад в его DebtorCreator
@@ -132,7 +137,7 @@ public class Bot extends TelegramLongPollingBot {
 
             }
             case "clear" -> { //Для очистки поля
-               debtorCreator.changeInfo("", debtorCreator.getStep());
+                debtorCreator.changeInfo("", debtorCreator.getStep());
                 debtorCreator.tapCreatorKeyboard(update);//процесс изменения меню
             }
             case "skipCycle" -> { // Если пользователь не желает заполнить поле
@@ -196,4 +201,28 @@ public class Bot extends TelegramLongPollingBot {
             throw new RuntimeException(e);
         }
     }
+
+    public String getUsername(Long id) {
+        GetChat getChat = new GetChat(id.toString());
+        try {
+            return execute(getChat).getUserName();
+        } catch (TelegramApiException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public String checkMessageContent(Message receivedMessage) {
+        if (receivedMessage.hasText()) return receivedMessage.getText();
+        if (receivedMessage.hasVoice()) return "user send voice.";
+        if (receivedMessage.hasVideo()) return "user send video.";
+        if (receivedMessage.hasSticker()) return "user send sticker.";
+        if (receivedMessage.hasPhoto()) return "user send photo.";
+        if (receivedMessage.hasAudio()) return "user send audio.";
+        if (receivedMessage.hasAnimation()) return "user send animation.";
+        if (receivedMessage.hasVideoNote()) return "user send videoNote.";
+        if (receivedMessage.hasLocation()) return "user send location.";
+        if (receivedMessage.hasDocument()) return "user send document. ";
+        return "user send unknown message";
+    }
+
 }

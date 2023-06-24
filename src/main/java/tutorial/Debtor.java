@@ -6,8 +6,8 @@ public class Debtor {
     private String name;
     private final long id;
     private int debt;
-    private GrowthCycle growthCyclel;
-    private short percent;
+    private GrowthCycle growthCycle;
+    private int percent;
     private String photo;
 
     public void setPhoto(String photo) {
@@ -20,15 +20,15 @@ public class Debtor {
                 "name='" + name + '\'' +
                 ", id=" + id +
                 ", debt=" + debt +
-                ", growthCyclel=" + growthCyclel +
+                ", growthCyclel=" + growthCycle +
                 ", percent=" + percent +
                 ", start=" + start +
                 ", description='" + description + '\'' +
                 "photo: " + photo + '}';
     }
 
-    public void setGrowthCycle(GrowthCycle growthCyclel) {
-        this.growthCyclel = growthCyclel;
+    public void setGrowthCycle(GrowthCycle growthCycle) {
+        this.growthCycle = growthCycle;
     }
 
     private final Date start;
@@ -59,7 +59,7 @@ public class Debtor {
     }
 
 
-    public void setPercent(short percent) {
+    public void setPercent(int percent) {
         this.percent = percent;
     }
 

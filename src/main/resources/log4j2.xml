@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="info">
+    <Appenders>
+        <RollingFile name="LogINFOToFile"
+                     filePattern="D:/logs/info/info-%d{dd-MM-yyyy}-%i.log">
+            <PatternLayout pattern="%-8c[%d{HH-mm-ss}]: %-5p  %m%n"/>
+            <Filters>
+                <LevelMatchFilter level="fatal" onMatch="DENY" onMismatch="NEUTRAL"/>
+                <ThresholdFilter level="info" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 KB"/>
+                <TimeBasedTriggeringPolicy/>
+            </Policies>
+        </RollingFile>
+        <Async name="AsyncInfo">
+            <AppenderRef ref="LogINFOToFile"/>
+        </Async>
+        <File name="DebugToFile"
+              fileName="D:/logs/debug.log">
+            <ThresholdFilter level="info" onMatch="DENY" onMismatch="ACCEPT"/>
+            <PatternLayout pattern="%-8c[%d{HH-mm-ss}]: %-5p  %m%n"/>
+        </File>
+    </Appenders>
+    <Loggers>
+        <Logger name="Bot" level="debug" additivity="false">
+            <AppenderRef ref="DebugToFile"/>
+            <AppenderRef ref="AsyncInfo"/>
+
+        </Logger>
+        <Logger name="DCreator" level="debug" additivity="false">
+            <AppenderRef ref="DebugToFile"/>
+            <AppenderRef ref="AsyncInfo"/>
+
+        </Logger>
+        <Root level="debug">
+            <AppenderRef ref="DebugToFile"/>
+        </Root>
+    </Loggers>
+</Configuration>

@@ -1,5 +1,7 @@
 package tutorial;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
@@ -15,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DebtorCreator extends Thread {
+    private static final Logger logger = LogManager.getLogger("DCreator");
     private boolean HaveAGrowth; // переменная-флаг, обозначающая, что в задолженности установлен рост
     private final long id; //user id
     private int step = 1; // поле, обозначающее номера шагов в записи задолженности (Название - сумма - цикл и тд.)
@@ -25,7 +28,7 @@ public class DebtorCreator extends Thread {
             \uD83D\uDCB9Процент роста: %\s
             ℹ️Описание:\s
             """); //Часто изменяемое, текстовое поле, с текстом для меню
-    private StringBuffer text = new StringBuffer(""); //Синхронизированное текстовое поле, и информацией от пользователя (Получение - запись - очистка)
+    private final StringBuffer text = new StringBuffer(""); //Синхронизированное текстовое поле, и информацией от пользователя (Получение - запись - очистка)
     private final static Bot bot = Main.myBot;
     private final Debtor debtor; // класс Debtor для сериализация задолженности
     private int KeyboardID; // ID меню
@@ -84,11 +87,9 @@ public class DebtorCreator extends Thread {
     После перехода на следующий шаг, первым делом происходит проверка была ли нажата какая-нибудь кнопка(помимо шагов, где это необходимо),
     потому что сразу после проверки идет запись данных с предыдущего шага, а когда пользователь нажимает кнопку "Пропустить", никакие данные не передаются.
 
-    Запись данных, для дальнейшей сериалиазации объекта Debtor, происходит в методе writeInformation.
+    Запись данных, для дальнейшей сериализации объекта Debtor, происходит в методе writeInformation.
      */
     public void tapCreatorKeyboard(Update update) { //метод с процессом изменения меню с настройкой
-        if (!checkExceptions(update))
-            return; //Метод для выявления неправильного ввода данных(например когда нужно число, а пользователь отправляет стикер).
         String editText = null;                   //ссылки, которые принимают значения на каждом шагу
         InlineKeyboardMarkup editKeyboard = null;//
         switch (step) {
@@ -163,14 +164,17 @@ public class DebtorCreator extends Thread {
         String temp = null;
         switch (step) {
             case 1 -> {
+
                 temp = "Название: ";
                 pattern = Pattern.compile("(Название:.*)");
             }
             case 2 -> {
+
                 temp = "Сумма: ";
                 pattern = Pattern.compile("(Сумма:.*)");
             }
             case 3 -> {
+
                 temp = "Цикл роста: ";
                 pattern = Pattern.compile("(Цикл роста:.*)");
             }
@@ -186,6 +190,7 @@ public class DebtorCreator extends Thread {
             case 7 -> { //в нем, в отличие от всех, будет не изменение фотографии(потому что если пользователь и решит изменить фото, меню будет отправлено заново)
                 //этот метод будет использоваться, если пользователь на 8 шаге нажмет "Очистить поле", тогда нужно очистить поле photo у Debtor,
                 // заново отправить чисто текстовое сообщение, и убрать флаг isHaveAPhoto.
+                logger.info("User: " + bot.getUsername(id) + " set photo:" + s);
                 debtor.setPhoto(null);
                 isHaveAPhoto = false;
                 bot.deleteMessage(id, KeyboardID); //удаляем предыдущее меню с фото
@@ -200,28 +205,51 @@ public class DebtorCreator extends Thread {
     }
 
     public void NumericExceptions(Exception e) { //Исключения связанные с воддом числовых данных
-        if (e instanceof NegativeValueException) sendException("❗Разрешается только положительные числа.❗");
-        else sendException("❗Неправильный ввод числа.❗"); //используем метод sendException, чтоб отправить ошибку
-        changeStep(true);
+        if (e instanceof NegativeValueException) {
+            sendException("❗Разрешается только положительные числа.❗");
+            logger.error(String.format("User:%-28s %-6s %s", bot.getUsername(id), "INCRT:", "Negative value"));
+        } else {
+            sendException("❗Неправильный ввод числа.❗");
+            logger.error(String.format("User:%-28s %-6s %s", bot.getUsername(id), "INCRT:", "Not numeric input"));
+        } //используем метод sendException, чтоб отправить ошибку
     }
 
     public boolean checkExceptions(Update update) { //проверка исключений
         try {
+            logger.debug("CheckingExceptions...");
+            currentUpdate = update;
             switch (step) {
-                case 4, 5, 9 -> { //это для шагов, в которых нужно только нажимать на кнопки
+                case 3, 4, 8 -> { //это для шагов, в которых нужно только нажимать на кнопки
                     if (!update.hasCallbackQuery()) throw new IncorrectMessageException();
                 }
-                case 8 -> {//это для шага, где нужно отправить фото или пропустить шаг
+                case 7 -> {//это для шага, где нужно отправить фото или пропустить шаг
                     if (update.hasMessage() && !update.getMessage().hasPhoto()) {
                         if (!update.hasCallbackQuery()) {
                             throw new IncorrectMessageException();
                         }
                     }
                 }
+                case 1, 6 -> {
+                    if (!update.getMessage().hasText()) throw new IncorrectMessageException();
+                }
+                case 2, 5 -> {
+                    try {
+                        logger.debug("Numeric Exception");
+                        int sum = Integer.parseInt(update.getMessage().getText());//пробуем перевести введенный текст в число
+                        if (sum <= 0 || update.getMessage().getText().startsWith("0"))
+                            throw new NegativeValueException();//проверяем на логические несостыковки
+                        debtor.setDebt(sum);
+                    } catch (NumberFormatException | NegativeValueException e) {
+                        NumericExceptions(e); //вызываем метод числовых исключений
+                        return false;
+                    }
+                    if (!update.getMessage().hasText() || update.getMessage().getText().contains("\\"))
+                        throw new IncorrectMessageException();
+                }
             }
         } catch (IncorrectMessageException e) {
+            logger.error(String.format("User:%-28s %-6s %s", bot.getUsername(id), "INCRT:", bot.checkMessageContent(update.getMessage())));
             sendException("❗Неправильный ввод данных.❗");
-            changeStep(true);
             return false;
         }
         return true;
@@ -232,6 +260,7 @@ public class DebtorCreator extends Thread {
     }
 
     public void sendException(String text) { //метод для отправки ошибки
+
         if (currentUpdate.hasMessage())
             bot.deleteMessage(id, currentUpdate.getMessage().getMessageId()); // удаляем сообщение пользователя, которое вызвало ошибку
         if (ExceptionMessage != null) {//проверка есть ли в чате старое сообщение об ошибке
@@ -250,19 +279,14 @@ public class DebtorCreator extends Thread {
     private boolean writeInformation(String text) { //метод для записи данных в объект Debtor
         switch (step) {
             case 2 -> {
+                logger.info(String.format("User:%-28s %-6s %s", bot.getUsername(id), "NAME->", text));
                 debtor.setName(text);//сохранение данных происходит в начале следующего шага
                 changeInfo(text, 1);//изменение текста меню
             }
             case 3 -> {
-                try {
-                    int sum = Integer.parseInt(text);//пробуем перевести введенный текст в число
-                    if (sum <= 0 || text.startsWith("0"))
-                        throw new NegativeValueException();//проверяем на логические несостыковки
-                    debtor.setDebt(sum);
-                } catch (NumberFormatException | NegativeValueException e) {
-                    NumericExceptions(e); //вызываем метод числовых исключений
-                    return false;
-                }
+                int sum = Integer.parseInt(text);
+                debtor.setDebt(sum);
+                logger.info(String.format("User:%-28s %-6s %s", bot.getUsername(id), "DEBT->", text));
                 changeInfo(text, 2); //меняем основной текст меню настройки
             }
             case 5 -> {
@@ -281,24 +305,22 @@ public class DebtorCreator extends Thread {
                         changeInfo("Каждый час", 3);
                     }
                 }
+                logger.info(String.format("User:%-28s %-7s %s", bot.getUsername(id), "CYCLE->", text));
             }
             case 6 -> { //опять же все как позапрошлом шаге
-                try {
-                    short percent = Short.parseShort(text);
-                    if (percent <= 0) throw new NegativeValueException();
-                    debtor.setPercent(percent);
-                } catch (NumberFormatException | NegativeValueException e) {
-                    NumericExceptions(e);
-                    return false;
-                }
+                int percent = Integer.parseInt(text);
+                debtor.setPercent(percent);
+                logger.info(String.format("User:%-28s %-6s %s", bot.getUsername(id), "GROWTH->", text));
                 changeInfo(text, 4);
             }
             case 7 -> {
                 debtor.setDescription(text);
+                logger.info(String.format("User:%-28s %-6s %s", bot.getUsername(id), "DESC->", text));
                 changeInfo(text, 6);
             }
             case 8 -> { // /в случае с фото, мы сохраняем его в каталог с помощью метода savePhoto, который вернет путь к файлу, а затем передадим этот путь полю photo у Debtor
                 String url = bot.savePhoto(currentUpdate.getMessage().getPhoto(), id + debtor.getName());
+                logger.info(String.format("User:%-28s %-6s %s", bot.getUsername(id), "PHOTO->", url));
                 debtor.setPhoto(url);
             }
         }
@@ -344,7 +366,5 @@ public class DebtorCreator extends Thread {
         if (currentUpdate.getMessage().hasText()) { //удаляем сообщение отправленное пользователем
             bot.deleteMessage(id, currentUpdate.getMessage().getMessageId());
         }
-
-
     }
 }
